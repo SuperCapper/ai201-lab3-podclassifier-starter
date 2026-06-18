@@ -8,9 +8,9 @@
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Annotate all 20 training episodes in `data/my_labels.json` | ✅ Done |
+| 2 | Draft `specs/classifier-spec.md` before coding | ✅ Done |
 | 2 | Write `build_few_shot_prompt()` in `classifier.py` | ⬜ TODO |
 | 2 | Write `classify_episode()` in `classifier.py` | ⬜ TODO |
-| 2 | Draft `specs/classifier-spec.md` before coding | ⬜ TODO |
 | 3 | Write `compute_accuracy()` in `evaluate.py` | ⬜ TODO |
 | 3 | Write `compute_per_class_accuracy()` in `evaluate.py` | ⬜ TODO |
 | 3 | Draft `specs/evaluation-spec.md` before coding | ⬜ TODO |
@@ -72,27 +72,27 @@ text = response.choices[0].message.content
 5. Return list of dicts with keys: `id`, `title`, `podcast`, `description`, `label`
 
 ### `build_few_shot_prompt()` — TODO (Milestone 2)
-1. Write a **system message** describing the task and the 4 labels
-2. For each labeled training example, format a block like:
-   ```
-   Description: <episode description>
-   Label: <label>
-   ```
-3. Append the **new unseen description** and ask the model to respond with:
-   - A label (exactly one of: interview, solo, panel, narrative)
-   - A brief reasoning sentence
-4. Specify output format precisely so `classify_episode()` can parse it reliably
-   - Options: `Label: X\nReasoning: Y` or JSON `{"label": "...", "reasoning": "..."}`
+Spec finalized in `specs/classifier-spec.md`. Key decisions locked in:
+1. System message defines the 4 labels and instructs: *return only label and reasoning*
+2. Each training example is a three-line block — `Title:`, `Description:`, `Label:` — separated by `---`
+3. New episode is presented identically with `Label: ?` at the end
+4. Requested output format: exactly two lines — `Label: <label>` / `Reasoning: <sentence>`
+5. If `labeled_examples` is empty, insert an explicit note before the examples block
+
+Confirmed with a live Groq test call — the model returned:
+```
+Label: narrative
+Reasoning: This episode tells a story assembled from external information...
+```
 
 ### `classify_episode()` — TODO (Milestone 2)
+Spec finalized in `specs/classifier-spec.md`. Key decisions locked in:
 1. Call `build_few_shot_prompt(labeled_examples, description)`
-2. Send to Groq API
-3. Parse the text response:
-   - Extract label string and reasoning
-   - Strip whitespace, lowercase, validate against `VALID_LABELS`
-4. If label not in `VALID_LABELS` → set `label = "unknown"`
-5. Return `{"label": "...", "reasoning": "..."}`
-6. Wrap in try/except — a failed API call or unparseable response must not crash evaluation
+2. Send via `_client.chat.completions.create(model=LLM_MODEL, max_tokens=200)`
+3. Parse: split on `\n`, scan for `Label:` and `Reasoning:` prefixes using `split(':', 1)[1].strip()`
+4. Fallback: if no `Label:` line, scan first non-empty line for any VALID_LABELS word
+5. Validate: exact match against `VALID_LABELS` only — no fuzzy matching; invalid → `"unknown"`
+6. Wrap entire body in `try/except Exception` — return `{"label": "unknown", "reasoning": "Classification failed: ..."}` on any error
 
 ### `compute_accuracy()` — TODO (Milestone 3)
 ```
@@ -147,11 +147,11 @@ Edge case: if a label has 0 test examples, return `accuracy = 0.0` (not division
 - [x] `format_evaluation_report()` formats per-class bars and misclassified list
 - [x] Gradio UI renders both tabs and example buttons
 - [x] Config loads API key from `.env`
+- [x] `specs/classifier-spec.md` fully complete — all blanks filled, implementation notes populated with real LLM response data
 
 ### Yet to build (Milestone 2)
 - [ ] `build_few_shot_prompt()` — prompt template with training examples
 - [ ] `classify_episode()` — API call + response parsing + label validation
-- [ ] `specs/classifier-spec.md` — write the spec before coding
 
 ### Yet to build (Milestone 3)
 - [ ] `compute_accuracy()` — overall accuracy float
@@ -167,17 +167,11 @@ Edge case: if a label has 0 test examples, return `accuracy = 0.0` (not division
 
 ## Building Next and Why
 
-**Next: `specs/classifier-spec.md` + `build_few_shot_prompt()`**
+**Next: `build_few_shot_prompt()` + `classify_episode()` in `classifier.py`**
 
-The prompt is the entire training signal for the classifier. Getting the format right matters more than any other single decision:
-- Too little context → the LLM ignores the examples
-- Ambiguous output format → parsing fails silently and returns `"unknown"`
-- Too many tokens → slower, more expensive, and the model may lose track of the task
+The spec is done and a live test call confirmed the model returns the expected two-line format. Implementation is now straightforward plumbing — the design decisions are already locked in. Priority order:
 
-The spec should nail down:
-1. Exact system message wording
-2. Example block format (how each training example is presented)
-3. Output format the model must follow
-4. How `classify_episode()` will parse that output
-
-After the prompt is solid, `classify_episode()` is mostly plumbing. After that, the two evaluation functions are simple arithmetic.
+1. `build_few_shot_prompt()` — assemble the prompt string from the spec's template
+2. `classify_episode()` — wire up the API call, parse with `split(':', 1)`, validate, wrap in try/except
+3. Smoke-test by running the Classify tab in the Gradio UI on one of the four built-in examples
+4. Then move to `specs/evaluation-spec.md` + Milestone 3 accuracy functions

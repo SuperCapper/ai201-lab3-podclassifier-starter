@@ -275,29 +275,57 @@ any labels you're unsure about. Annotation quality is part of the lab.
 
 ## Implementation Notes
 
-*Fill this in after implementing and testing both functions.*
-
 **Test: what does the raw LLM response look like for one episode?**
 
 ```
-Episode tested: [title]
-Raw response text: [paste it here]
+Episode tested: The Aral Sea: A Disaster in Four Acts
+
+Raw response text (repr):
+'Label: narrative\nReasoning: This episode tells a story assembled from external
+information, likely including historical records and interviews, with a clear
+narrative arc, as indicated by the description of the story being told in four parts.'
+
+Rendered:
+Label: narrative
+Reasoning: This episode tells a story assembled from external information, likely
+including historical records and interviews, with a clear narrative arc, as indicated
+by the description of the story being told in four parts.
 ```
 
 **How did you parse the label out of the response?**
 
 ```
-[describe the string operations — strip, split, lower, etc.]
+1. response.choices[0].message.content gives the full string.
+2. Split on '\n' → ['Label: narrative', 'Reasoning: This episode tells...']
+3. For each line, check if line.lower().startswith('label:'):
+     label_raw = line.split(':', 1)[1].strip().lower()   →  'narrative'
+4. For each line, check if line.lower().startswith('reasoning:'):
+     reasoning  = line.split(':', 1)[1].strip()          →  'This episode tells...'
+5. Validate label_raw against VALID_LABELS.
+   'narrative' is in VALID_LABELS → label = 'narrative'.
+
+The model produced the format exactly as requested — no extra text,
+no markdown fences, no preamble. The split(':', 1) handles the Reasoning
+line safely even if the reasoning text itself contains a colon.
 ```
 
 **Did any episodes return `"unknown"`? If so, why?**
 
 ```
-[yes / no — if yes, what did the raw response look like?]
+No — the model followed the two-line format exactly in the test call.
+If the model strays from the format (e.g., adds a preamble sentence before
+"Label:"), the fallback in Step 3 (scan the first non-empty line for a
+VALID_LABELS word) would catch it before falling through to "unknown".
 ```
 
 **One thing about the output format that surprised you:**
 
 ```
-[your answer here]
+The model's reasoning referenced "likely including historical records and
+interviews" — inferring sources that weren't stated in the description.
+It applied the narrative definition (assembled from external sources) correctly
+even though the description doesn't explicitly name source types. This shows
+the few-shot examples are teaching the right signal: the model is reasoning
+about structure, not just pattern-matching on keywords like "reporter" or
+"documents".
 ```
