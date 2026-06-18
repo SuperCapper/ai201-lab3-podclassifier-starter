@@ -91,10 +91,22 @@ the format below:" followed by the output format you chose.
 **What output format should you request from the LLM?**
 
 ```
-[blank — you need to parse the response in classify_episode(). What format
-makes parsing reliable? Think about: a single label on its own line?
-A structured format like "Label: X / Reasoning: Y"? JSON?
-What are the tradeoffs?]
+Use a two-line labeled format:
+
+  Label: <label>
+  Reasoning: <one sentence>
+
+Ask the model to respond with exactly those two lines and nothing else.
+
+Why not JSON? LLMs frequently wrap JSON in markdown fences (```json ... ```)
+or add a prose sentence before the block, making json.loads() fail without
+extra stripping logic. The labeled-line format is easier to parse: scan lines
+for the "Label:" prefix, strip and lowercase, done. If the model ignores the
+format and writes prose, the parser can still search for a VALID_LABELS word
+on the first non-empty line as a fallback.
+
+Why not a single bare label? A reasoning string is required by classify_episode()'s
+return type and shown in the Gradio UI. A bare label gives us nothing to display.
 ```
 
 ---
@@ -102,8 +114,23 @@ What are the tradeoffs?]
 **Edge cases to handle in the prompt:**
 
 ```
-[blank — what if labeled_examples is empty? What if the description is very
-short? How does your prompt handle these?]
+1. labeled_examples is empty
+   Still build and send the prompt — the LLM has general knowledge of podcast
+   formats and can still classify. Insert a note before the examples block:
+   "No labeled examples are available. Use your general knowledge of podcast
+   formats." This makes the absence explicit rather than silently sending a
+   malformed prompt.
+
+2. Description is very short (e.g., one sentence)
+   No special handling needed. Short descriptions are valid input. The model
+   may be less confident, but that shows up in the reasoning, not in a crash.
+
+3. Description contains quotation marks or special characters
+   Python f-strings handle this fine. No escaping needed for plain text prompts.
+
+4. A labeled example has a missing title or description field
+   Use .get() with a fallback: ep.get("title", "(no title)"). This prevents
+   a KeyError from breaking prompt construction for all 20 examples.
 ```
 
 ---
@@ -159,9 +186,23 @@ Extract the response text from:
 **Step 3 — Parse the response:**
 
 ```
-[blank — how do you extract the label and reasoning from the LLM's text output?
-What string operations or parsing logic do you need?
-This depends on the output format you chose in build_few_shot_prompt.]
+The expected format is:
+  Label: interview
+  Reasoning: The host draws out the guest's expertise via Q&A.
+
+Parsing steps:
+  1. Split the response text on newlines.
+  2. Scan each line for one that starts with "Label:" (case-insensitive).
+     Extract everything after the colon, strip whitespace, lowercase → label_raw.
+  3. Scan each line for one that starts with "Reasoning:" (case-insensitive).
+     Extract everything after the colon, strip whitespace → reasoning_raw.
+  4. If no "Label:" line is found, fallback: scan the first non-empty line for
+     any word that matches a VALID_LABELS entry (after lowercasing).
+  5. If no "Reasoning:" line is found, use the full response text as reasoning
+     so the UI always has something to display.
+
+This makes the parser tolerant of minor format deviations without hiding
+parsing failures — the fallback behavior is visible in the reasoning field.
 ```
 
 ---
@@ -169,8 +210,19 @@ This depends on the output format you chose in build_few_shot_prompt.]
 **Step 4 — Validate the label:**
 
 ```
-[blank — what do you do if the LLM returns a label that isn't in VALID_LABELS?
-What should label be set to?]
+After parsing, check:
+  if label_raw not in VALID_LABELS:
+      label = "unknown"
+  else:
+      label = label_raw
+
+"unknown" is the contract defined in classify_episode()'s return spec and is
+handled by the UI's LABEL_COLORS dict (mapped to slate gray). Setting it here
+keeps all downstream code clean — no None checks, no KeyErrors in the UI.
+
+Do NOT try to fuzzy-match (e.g., "interviews" → "interview"). If the model
+can't return a valid label verbatim, "unknown" is the honest answer and helps
+identify prompt quality issues.
 ```
 
 ---
@@ -178,9 +230,24 @@ What should label be set to?]
 **Step 5 — Handle errors gracefully:**
 
 ```
-[blank — what could go wrong? (Network error? Unparseable response?)
-What should the function return if something fails?
-Hint: the evaluation loop runs 20 calls — one bad response shouldn't crash everything.]
+Wrap the entire function body in try/except Exception as e.
+
+Things that can fail:
+  - Network error or Groq API timeout → raises an exception before we get a response
+  - Rate-limit error (429) → raises an exception
+  - response.choices is empty → IndexError on choices[0]
+  - Response text is completely unparseable → label stays "unknown" (handled in Step 4)
+
+On any exception:
+  return {
+      "label": "unknown",
+      "reasoning": f"Classification failed: {str(e)}",
+  }
+
+Why return rather than re-raise? run_evaluation() iterates 20 episodes in a loop.
+One failed API call must not abort the remaining 19. The "unknown" label is counted
+as incorrect in accuracy scoring, which is the right behavior — a failure is not a
+correct prediction.
 ```
 
 ---
