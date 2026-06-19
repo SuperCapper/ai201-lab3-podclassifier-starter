@@ -10,7 +10,7 @@
 | 1 | Annotate all 20 training episodes in `data/my_labels.json` | ✅ Done |
 | 2 | Draft `specs/classifier-spec.md` before coding | ✅ Done |
 | 2 | Write `build_few_shot_prompt()` in `classifier.py` | ✅ Done |
-| 2 | Write `classify_episode()` in `classifier.py` | ⬜ TODO |
+| 2 | Write `classify_episode()` in `classifier.py` | ✅ Done |
 | 3 | Write `compute_accuracy()` in `evaluate.py` | ⬜ TODO |
 | 3 | Write `compute_per_class_accuracy()` in `evaluate.py` | ⬜ TODO |
 | 3 | Draft `specs/evaluation-spec.md` before coding | ⬜ TODO |
@@ -79,14 +79,15 @@ Assembles three sections into a single prompt string:
 
 Smoke-tested: 142 lines, 12,304 chars with all 20 examples loaded. First and last lines confirmed correct.
 
-### `classify_episode()` — TODO (Milestone 2)
-Spec finalized in `specs/classifier-spec.md`. Key decisions locked in:
-1. Call `build_few_shot_prompt(labeled_examples, description)`
-2. Send via `_client.chat.completions.create(model=LLM_MODEL, max_tokens=200)`
-3. Parse: split on `\n`, scan for `Label:` and `Reasoning:` prefixes using `split(':', 1)[1].strip()`
-4. Fallback: if no `Label:` line, scan first non-empty line for any VALID_LABELS word
-5. Validate: exact match against `VALID_LABELS` only — no fuzzy matching; invalid → `"unknown"`
-6. Wrap entire body in `try/except Exception` — return `{"label": "unknown", "reasoning": "Classification failed: ..."}` on any error
+### `classify_episode()` — ✅ implemented
+1. Calls `build_few_shot_prompt(labeled_examples, description)`
+2. Sends via `_client.chat.completions.create(model=LLM_MODEL, max_tokens=200)`
+3. Parses response: splits on `\n`, scans for `Label:` and `Reasoning:` prefixes with `split(':', 1)[1].strip()`
+4. Fallback: if no `Label:` line found, scans the first non-empty line word-by-word for any VALID_LABELS match
+5. Validates: exact match against `VALID_LABELS`; anything else → `"unknown"`
+6. Entire body wrapped in `try/except Exception` — returns `{"label": "unknown", "reasoning": "Classification failed: ..."}` on any error
+
+Smoke-tested with a live call — returned `label: narrative`, valid label, correct reasoning.
 
 ### `compute_accuracy()` — TODO (Milestone 3)
 ```
@@ -143,9 +144,10 @@ Edge case: if a label has 0 test examples, return `accuracy = 0.0` (not division
 - [x] Config loads API key from `.env`
 - [x] `specs/classifier-spec.md` fully complete — all blanks filled, implementation notes populated with real LLM response data
 - [x] `build_few_shot_prompt()` — implemented and smoke-tested (142 lines, correct head/tail)
+- [x] `classify_episode()` — implemented and smoke-tested (live call returned valid label + reasoning)
 
 ### Yet to build (Milestone 2)
-- [ ] `classify_episode()` — API call + response parsing + label validation
+- Milestone 2 complete ✅
 
 ### Yet to build (Milestone 3)
 - [ ] `compute_accuracy()` — overall accuracy float
@@ -161,15 +163,11 @@ Edge case: if a label has 0 test examples, return `accuracy = 0.0` (not division
 
 ## Building Next and Why
 
-**Next: `classify_episode()` in `classifier.py`**
+**Next: `specs/evaluation-spec.md` + Milestone 3 accuracy functions**
 
-`build_few_shot_prompt()` is done. `classify_episode()` is the remaining Milestone 2 piece — wire up the Groq API call, parse the two-line response, validate, and wrap in try/except. Steps:
+Milestone 2 is complete. Moving to `evaluate.py`:
 
-1. Call `build_few_shot_prompt(labeled_examples, description)`
-2. Send via `_client.chat.completions.create(model=LLM_MODEL, max_tokens=200)`
-3. Parse: split on `\n`, scan for `Label:` and `Reasoning:` prefixes using `split(':', 1)[1].strip()`
-4. Fallback: if no `Label:` line, scan first non-empty line for any VALID_LABELS word
-5. Validate: exact match against `VALID_LABELS`; invalid → `"unknown"`
-6. Wrap in `try/except Exception` — return `{"label": "unknown", "reasoning": "..."}` on any error
-
-After that: smoke-test in the Gradio Classify tab, then move to `specs/evaluation-spec.md` + Milestone 3.
+1. Draft `specs/evaluation-spec.md` — define the logic for `compute_accuracy()` and `compute_per_class_accuracy()` before coding
+2. Implement `compute_accuracy()` — correct predictions / total
+3. Implement `compute_per_class_accuracy()` — per-label correct/total/accuracy breakdown
+4. Run full evaluation via the Gradio Evaluate tab and review the per-class accuracy report
