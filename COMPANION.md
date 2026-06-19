@@ -9,7 +9,7 @@
 |---|---|---|
 | 1 | Annotate all 20 training episodes in `data/my_labels.json` | ✅ Done |
 | 2 | Draft `specs/classifier-spec.md` before coding | ✅ Done |
-| 2 | Write `build_few_shot_prompt()` in `classifier.py` | ⬜ TODO |
+| 2 | Write `build_few_shot_prompt()` in `classifier.py` | ✅ Done |
 | 2 | Write `classify_episode()` in `classifier.py` | ⬜ TODO |
 | 3 | Write `compute_accuracy()` in `evaluate.py` | ⬜ TODO |
 | 3 | Write `compute_per_class_accuracy()` in `evaluate.py` | ⬜ TODO |
@@ -71,19 +71,13 @@ text = response.choices[0].message.content
 4. Filter: skip any entry whose label is not in `VALID_LABELS`
 5. Return list of dicts with keys: `id`, `title`, `podcast`, `description`, `label`
 
-### `build_few_shot_prompt()` — TODO (Milestone 2)
-Spec finalized in `specs/classifier-spec.md`. Key decisions locked in:
-1. System message defines the 4 labels and instructs: *return only label and reasoning*
-2. Each training example is a three-line block — `Title:`, `Description:`, `Label:` — separated by `---`
-3. New episode is presented identically with `Label: ?` at the end
-4. Requested output format: exactly two lines — `Label: <label>` / `Reasoning: <sentence>`
-5. If `labeled_examples` is empty, insert an explicit note before the examples block
+### `build_few_shot_prompt()` — ✅ implemented
+Assembles three sections into a single prompt string:
+1. **Task instruction** — defines the 4 labels inline, ends with "Return only the label and your reasoning."
+2. **Examples block** — iterates `labeled_examples`; each entry is a `Title:` / `Description:` / `Label:` block separated by `---`. If `labeled_examples` is empty, substitutes a plain-language note.
+3. **New episode** — same `Title:` / `Description:` / `Label: ?` format, followed by the exact two-line output template the model must match.
 
-Confirmed with a live Groq test call — the model returned:
-```
-Label: narrative
-Reasoning: This episode tells a story assembled from external information...
-```
+Smoke-tested: 142 lines, 12,304 chars with all 20 examples loaded. First and last lines confirmed correct.
 
 ### `classify_episode()` — TODO (Milestone 2)
 Spec finalized in `specs/classifier-spec.md`. Key decisions locked in:
@@ -148,9 +142,9 @@ Edge case: if a label has 0 test examples, return `accuracy = 0.0` (not division
 - [x] Gradio UI renders both tabs and example buttons
 - [x] Config loads API key from `.env`
 - [x] `specs/classifier-spec.md` fully complete — all blanks filled, implementation notes populated with real LLM response data
+- [x] `build_few_shot_prompt()` — implemented and smoke-tested (142 lines, correct head/tail)
 
 ### Yet to build (Milestone 2)
-- [ ] `build_few_shot_prompt()` — prompt template with training examples
 - [ ] `classify_episode()` — API call + response parsing + label validation
 
 ### Yet to build (Milestone 3)
@@ -167,11 +161,15 @@ Edge case: if a label has 0 test examples, return `accuracy = 0.0` (not division
 
 ## Building Next and Why
 
-**Next: `build_few_shot_prompt()` + `classify_episode()` in `classifier.py`**
+**Next: `classify_episode()` in `classifier.py`**
 
-The spec is done and a live test call confirmed the model returns the expected two-line format. Implementation is now straightforward plumbing — the design decisions are already locked in. Priority order:
+`build_few_shot_prompt()` is done. `classify_episode()` is the remaining Milestone 2 piece — wire up the Groq API call, parse the two-line response, validate, and wrap in try/except. Steps:
 
-1. `build_few_shot_prompt()` — assemble the prompt string from the spec's template
-2. `classify_episode()` — wire up the API call, parse with `split(':', 1)`, validate, wrap in try/except
-3. Smoke-test by running the Classify tab in the Gradio UI on one of the four built-in examples
-4. Then move to `specs/evaluation-spec.md` + Milestone 3 accuracy functions
+1. Call `build_few_shot_prompt(labeled_examples, description)`
+2. Send via `_client.chat.completions.create(model=LLM_MODEL, max_tokens=200)`
+3. Parse: split on `\n`, scan for `Label:` and `Reasoning:` prefixes using `split(':', 1)[1].strip()`
+4. Fallback: if no `Label:` line, scan first non-empty line for any VALID_LABELS word
+5. Validate: exact match against `VALID_LABELS`; invalid → `"unknown"`
+6. Wrap in `try/except Exception` — return `{"label": "unknown", "reasoning": "..."}` on any error
+
+After that: smoke-test in the Gradio Classify tab, then move to `specs/evaluation-spec.md` + Milestone 3.

@@ -41,21 +41,44 @@ def load_labeled_examples() -> list[dict]:
 def build_few_shot_prompt(labeled_examples: list[dict], description: str) -> str:
     """
     Build a few-shot classification prompt using the student's labeled training examples.
-
-    TODO — Milestone 2:
-
-    Your prompt needs to:
-      1. Describe the task and the four valid labels
-      2. Show the labeled training examples so the LLM can learn the pattern
-      3. Present the new description and ask for a classification
-
-    The LLM should return a single label from VALID_LABELS (exactly as written)
-    plus a brief explanation of its reasoning. Think carefully about the output
-    format you request — you'll need to parse it in classify_episode().
-
-    Before writing code, complete specs/classifier-spec.md.
     """
-    return ""
+    task_instruction = (
+        "You are classifying podcast episodes by their format. "
+        "Classify the episode into exactly one of these four labels:\n\n"
+        "- interview: a conversation between a host and one or more guests\n"
+        "- solo: a single host speaking from memory, experience, or opinion — "
+        "no guests, no assembled external sources\n"
+        "- panel: multiple guests with roughly equal speaking time, often debating "
+        "or discussing a topic together\n"
+        "- narrative: a story assembled from external sources — interviews, archival "
+        "audio, reporting — with a clear narrative arc\n\n"
+        "Return only the label and your reasoning. Do not explain the taxonomy."
+    )
+
+    if labeled_examples:
+        examples_block = "Here are labeled examples:\n\n---\n\n"
+        for ex in labeled_examples:
+            title = ex.get("title", "(no title)")
+            desc = ex.get("description", "(no description)")
+            label = ex["label"]
+            examples_block += f"Title: {title}\nDescription: {desc}\nLabel: {label}\n\n---\n\n"
+    else:
+        examples_block = (
+            "No labeled examples are available. "
+            "Use your general knowledge of podcast formats.\n\n---\n\n"
+        )
+
+    new_episode = (
+        f"Now classify this episode:\n\n"
+        f"Title: (unknown)\n"
+        f"Description: {description}\n"
+        f"Label: ?\n\n"
+        f"Respond with exactly two lines:\n"
+        f"Label: <one of: interview, solo, panel, narrative>\n"
+        f"Reasoning: <one sentence explaining why>"
+    )
+
+    return f"{task_instruction}\n\n{examples_block}{new_episode}"
 
 
 def classify_episode(description: str, labeled_examples: list[dict]) -> dict:
